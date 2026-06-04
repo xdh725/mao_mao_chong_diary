@@ -1,5 +1,6 @@
 #!/bin/bash
 # Deploy dist/ to gh-pages branch (clean, no node_modules)
+# Uses temp directory to avoid branch-switching issues
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -8,40 +9,51 @@ cd "$REPO_DIR"
 # Ensure pnpm and local binaries are in PATH
 export PATH="/usr/local/bin:$(pwd)/node_modules/.bin:$PATH"
 
-# Build
+# Step 1: Build on main branch
 echo "Building..."
 pnpm build
 
-# Create a clean temp directory with only dist contents
+# Step 2: Copy dist to a temp directory (safe from branch switching)
 TMPDIR=$(mktemp -d)
+echo "Using temp dir: $TMPDIR"
 cp -r dist/* "$TMPDIR/"
 touch "$TMPDIR/.nojekyll"
+echo "Copied $(find "$TMPDIR" -type f | wc -l) files to temp"
 
-# Save current branch
+# Step 3: Switch to gh-pages and clean
 CURRENT_BRANCH=$(git branch --show-current)
-
-# Checkout gh-pages, replace all files
 git checkout gh-pages
 
-# Remove everything except .git
-find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
+# Remove everything except .git (use -not instead of ! for zsh compatibility)
+find . -maxdepth 1 -not -name '.git' -not -name '.' -exec rm -rf {} +
 
-# Copy new files (including hidden ones like .nojekyll)
+# Step 4: Copy from temp (includes .nojekyll via the "." copy)
 cp -r "$TMPDIR/." .
 rm -rf "$TMPDIR"
 
-# Double-check .nojekyll exists (critical for GitHub Pages)
+# Step 5: Double-check .nojekyll exists (critical for GitHub Pages)
 if [ ! -f .nojekyll ]; then
   echo "Warning: .nojekyll missing, creating it..."
   touch .nojekyll
 fi
 
-# Commit and push
+echo "Deployed files:"
+echo "  .nojekyll: $(test -f .nojekyll && echo 'YES' || echo 'NO')"
+echo "  node_modules: $(test -d node_modules && echo 'YES (BAD)' || echo 'NO (GOOD)')"
+echo "  Total files: $(find . -not -path './.git/*' -not -path './.git' | wc -l)"
+
+# Step 6: Commit and push
 git add -A
 git commit -m "deploy: $(date +%Y-%m-%d)" || echo "No changes to deploy"
 git push origin gh-pages
 
-# Go back
+# Step 7: Go back to original branch
 git checkout "$CURRENT_BRANCH"
+
+# Step 8: Restore node_modules if needed (branch switch may have deleted it)
+if [ ! -d node_modules ]; then
+  echo "Restoring node_modules..."
+  pnpm install
+fi
 
 echo "Deployed to gh-pages!"
