@@ -1,1 +1,0 @@
-import"./zh_TW.CB2OJO6B.js";function s(o,n){const r=o.replace(/^\/|\/$/g,"").toLowerCase(),t=n.replace(/^\/|\/$/g,"").toLowerCase();return r===t}function e(...o){return o.join("/").replace(/\/+/g,"/")}function u(o){return a(`/posts/${o}/`)}function a(o){return e("","/mao_mao_chong_diary/",o)}export{u as g,s as p,a as u};
