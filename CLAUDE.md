@@ -58,7 +58,9 @@ mao_mao_chong_diary/
 │   └── favicon/                # 网站图标（明暗主题 × 4 种尺寸）
 │
 ├── scripts/
-│   └── new-post.js             # 新建文章脚手架脚本
+│   ├── new-post.js             # 新建文章脚手架脚本
+│   ├── deploy.sh               # ★ 部署脚本（本地构建 → gh-pages 推送）
+│   └── daily-research.sh       # ★ 每日 AI Agent 调研自动化（crontab 10:00）
 │
 └── .github/workflows/
     └── deploy.yml              # GitHub Actions 自动部署工作流
@@ -129,24 +131,45 @@ pnpm lint             # Biome lint 检查并自动修复（src/ 目录）
 
 ## 部署流程
 
-### GitHub Actions 工作流 (`.github/workflows/deploy.yml`)
+### 部署方式：本地构建 + gh-pages 分支推送
 
-**触发条件**：
-- 推送到 `main` 分支
-- 手动触发（workflow_dispatch）
+由于 GitHub Actions runner 无法分配，部署采用本地构建后推送到 `gh-pages` 分支的方式。
 
-**构建步骤**：
-1. `actions/checkout@v4` — 检出代码
-2. `pnpm/action-setup@v2` (version: 9) — 安装 pnpm
-3. `actions/setup-node@v4` (node: 20, cache: pnpm) — 安装 Node.js
-4. `pnpm install` — 安装依赖
-5. `pnpm build` — 构建（包含 pagefind 搜索索引生成）
-6. `actions/upload-pages-artifact@v3` (path: ./dist) — 上传构建产物
+使用 `scripts/deploy.sh` 脚本一键完成：
+```bash
+bash scripts/deploy.sh
+```
 
-**部署步骤**：
-7. `actions/deploy-pages@v4` — 部署到 GitHub Pages
+**部署脚本做的事**：
+1. `pnpm build` — 构建（包含 pagefind 搜索索引生成）
+2. 切换到 `gh-pages` 分支
+3. 清空 gh-pages 根目录（保留 `.git`）
+4. 复制 `dist/*` 到 gh-pages 根目录
+5. 添加 `.nojekyll` 文件（**关键！没有它 Jekyll 会忽略 `_astro/` 目录**）
+6. 提交并推送到 `gh-pages` 分支
+7. 切回 `main` 分支
 
-**权限要求**：`contents: read`、`pages: write`、`id-token: write`
+### 部署前必须本地测试（强制规则）
+
+**任何内容变更（文章、配置、头像等）推送到 GitHub 之前，必须先在本地验证通过。**
+
+完整流程：
+1. **本地构建**：`pnpm build` — 确保构建无错误
+2. **本地预览**：`pnpm preview` — 启动预览服务器，检查页面显示正常
+3. **或 dev 测试**：`pnpm dev` — 启动开发服务器，在浏览器 `http://localhost:4321/mao_mao_chong_diary/` 确认：
+   - 页面样式正常（CSS 加载无 404）
+   - 控制台无 JS 错误
+   - 图片（头像等）正常显示
+   - 页面导航正常
+4. **确认无误后**再执行 `bash scripts/deploy.sh` 部署
+
+**绝不能跳过本地测试直接推送部署。**
+
+### GitHub Pages 配置
+
+- **Source**: `gh-pages` 分支，根目录 `/`（legacy 模式）
+- **`.nojekyll` 文件**：必须存在于 gh-pages 根目录，否则 Jekyll 处理会忽略 `_` 开头的目录（`_astro/`），导致所有 CSS/JS 404
+- **已禁用** `.github/workflows/deploy.yml`（runner 无法分配）
 
 ## 关键配置
 
@@ -197,7 +220,8 @@ pnpm new-post
    ```
 3. 编写正文（支持标准 Markdown + 上述扩展语法）
 4. 本地预览：`pnpm dev`，浏览器打开 `http://localhost:4321/mao_mao_chong_diary/`
-5. 确认无误后推送到 `main` 分支，GitHub Actions 自动构建部署
+5. 确认无误后提交到 `main` 分支
+6. 执行 `bash scripts/deploy.sh` 部署到 GitHub Pages
 
 ### Markdown 扩展语法速查
 ```markdown

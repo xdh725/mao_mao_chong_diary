@@ -26,9 +26,15 @@ git checkout gh-pages
 # Remove everything except .git
 find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
 
-# Copy new files
-cp -r "$TMPDIR/"* .
+# Copy new files (including hidden ones like .nojekyll)
+cp -r "$TMPDIR/." .
 rm -rf "$TMPDIR"
+
+# Double-check .nojekyll exists (critical for GitHub Pages)
+if [ ! -f .nojekyll ]; then
+  echo "Warning: .nojekyll missing, creating it..."
+  touch .nojekyll
+fi
 
 # Commit and push
 git add -A
