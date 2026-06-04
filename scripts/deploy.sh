@@ -5,6 +5,9 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
+# Ensure pnpm and local binaries are in PATH
+export PATH="/usr/local/bin:$(pwd)/node_modules/.bin:$PATH"
+
 # Build
 echo "Building..."
 pnpm build
