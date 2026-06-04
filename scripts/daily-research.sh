@@ -10,8 +10,8 @@ DATE=$(date +%Y-%m-%d)
 
 echo "===== [$DATE $(date +%H:%M:%S)] 开始每日调研 =====" >> "$LOG_FILE"
 
-# 确保 pnpm 在 PATH 中
-export PATH="/usr/local/bin:$PATH"
+# 确保 claude、pnpm、node 在 PATH 中
+export PATH="/usr/local/bin:/Users/xiedonghua/.nvm/versions/node/v22.17.0/bin:$PATH"
 
 # 进入项目目录
 cd "$PROJECT_DIR"
