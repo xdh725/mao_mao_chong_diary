@@ -6,8 +6,8 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
-# Ensure pnpm and local binaries are in PATH
-export PATH="/usr/local/bin:$(pwd)/node_modules/.bin:$PATH"
+# Ensure local binaries are in PATH (don't override system PATH which may break arch detection)
+export PATH="$(pwd)/node_modules/.bin:$PATH"
 
 # Step 1: Build on main branch
 echo "Building..."
@@ -22,6 +22,13 @@ echo "Copied $(find "$TMPDIR" -type f | wc -l) files to temp"
 
 # Step 3: Switch to gh-pages and clean
 CURRENT_BRANCH=$(git branch --show-current)
+# Stash any uncommitted changes to avoid checkout failure
+NEED_STASH=0
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Stashing uncommitted changes..."
+  git stash push -u -m "deploy: auto-stash before gh-pages switch"
+  NEED_STASH=1
+fi
 git checkout gh-pages
 
 # Remove everything except .git (use -not instead of ! for zsh compatibility)
@@ -50,7 +57,13 @@ git push origin gh-pages
 # Step 7: Go back to original branch
 git checkout "$CURRENT_BRANCH"
 
-# Step 8: Restore node_modules if needed (branch switch may have deleted it)
+# Step 8: Restore stashed changes if we stashed them
+if [ "$NEED_STASH" = "1" ]; then
+  echo "Restoring stashed changes..."
+  git stash pop
+fi
+
+# Step 9: Restore node_modules if needed (branch switch may have deleted it)
 if [ ! -d node_modules ]; then
   echo "Restoring node_modules..."
   pnpm install
