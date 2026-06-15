@@ -198,6 +198,12 @@ bash scripts/deploy.sh
 4. **CSS 注意事项** — PostCSS 配置了 `postcss-import` 和 `tailwindcss/nesting`，部分样式使用 Stylus（`.styl` 文件），`@apply` 等 Tailwind 指令需要在正确的 PostCSS 流程中才能解析
 5. **文章文件名约定** — `YYYY-MM-DD-主题.md`（如 `2026-06-01-hello-world.md`）
 6. **图片存放** — 放在 `src/assets/images/` 下，Astro 会在构建时优化处理；`public/` 下的文件直接复制不处理
+7. **微信排版兼容** — 日记会通过 `~/scripts/wechat-publish.sh` 自动同步到微信公众号，写 Markdown 时必须遵守以下规则：
+   - **禁止嵌套列表** — 微信不支持嵌套 `<ul>/<ol>` 渲染，改用平铺段落或标题分隔
+   - **禁止斜体** — `*文字*` 或 `_文字_` 在微信中渲染不一致，用加粗 `**文字**` 代替
+   - **禁止列表项内多段落** — 列表项内不要有空行，否则会断裂为独立段落
+   - **禁止外部图片** — `![alt](url)` 的外部 URL 会被微信过滤，用文字描述代替
+   - **有序列表正常写** — `1. 2. 3.` 会自动转换为微信兼容的手动编号格式
 
 ## 如何新增文章
 

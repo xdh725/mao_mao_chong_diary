@@ -112,7 +112,14 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
 - 这是日记，不是调研报告！不要写成结构化的技术文章
 - 技术细节要通过「我今天的理解是这样的...」这种方式来表达
 - 热点判断要务实，不要把普通文章当成热点
-- 确保部署成功后再结束"
+- 确保部署成功后再结束
+
+微信排版兼容规则（日记会自动同步到微信公众号，以下写法会导致排版异常）：
+- 禁止使用嵌套列表（如列表项内再包含子列表），微信不支持嵌套列表渲染，请改用平铺的段落或用标题分隔
+- 禁止使用斜体（*文字* 或 _文字_），微信对斜体渲染不一致，请用加粗（**文字**）代替
+- 禁止在列表项中使用多个段落（列表项内不要空行），否则会断裂为独立段落
+- 图片使用纯文字描述代替，不要用 ![alt](url) 语法（外部图片 URL 会被微信过滤）
+- 有序列表直接用 Markdown 数字列表写即可（1. 2. 3.），会自动转换为微信兼容格式"
 
 # 使用 stream-json + verbose 输出格式，记录完整的工具调用和思考过程
 # 注意：stream-json 必须搭配 --verbose；prompt 通过 stdin 传入避免被 --allowedTools 吞掉
@@ -127,6 +134,30 @@ EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
   echo "[$DATE] 日记完成！退出码: $EXIT_CODE" >> "$LOG_FILE"
+
+  # ========================================
+  # A2A 质检环节：调用质检 Agent 审查文章
+  # ========================================
+  POST_FILE=$(ls -t "$PROJECT_DIR/src/content/posts/${DATE}"-*.md 2>/dev/null | head -1)
+  if [ -n "$POST_FILE" ]; then
+    echo "[$DATE] 开始 A2A 质检: $POST_FILE" >> "$LOG_FILE"
+    QA_RESULT=$(python3 "$PROJECT_DIR/scripts/a2a-client.py" --check-file "$POST_FILE" --json 2>&1)
+    QA_EXIT=$?
+
+    if [ $QA_EXIT -eq 0 ]; then
+      QA_PASSED=$(echo "$QA_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null)
+      if [ "$QA_PASSED" = "True" ]; then
+        echo "[$DATE] A2A 质检通过" >> "$LOG_FILE"
+      else
+        echo "[$DATE] A2A 质检未通过，详情:" >> "$LOG_FILE"
+        echo "$QA_RESULT" >> "$LOG_FILE"
+      fi
+    else
+      echo "[$DATE] A2A 质检执行失败（不影响主流程）: $QA_RESULT" >> "$LOG_FILE"
+    fi
+  else
+    echo "[$DATE] 未找到今日文章文件，跳过质检" >> "$LOG_FILE"
+  fi
 
   # 发布到微信公众号草稿箱
   WECHAT_PUBLISH="/Users/xiedonghua/scripts/wechat-publish.sh"
