@@ -21,6 +21,19 @@ cd "$PROJECT_DIR"
 # 确保 git 在 main 分支
 git checkout main 2>/dev/null
 
+# ========================================
+# 预检：确保 rollup 平台二进制存在（防止 "Cannot find module @rollup/rollup-darwin-*" 错误）
+# ========================================
+ROLLUP_OK=0
+if [ -d "node_modules/.pnpm" ]; then
+  # 检查是否存在任意 rollup-darwin 平台包
+  ls -d node_modules/.pnpm/@rollup+rollup-darwin-* >/dev/null 2>&1 && ROLLUP_OK=1
+fi
+if [ "$ROLLUP_OK" -eq 0 ]; then
+  echo "[$DATE] 预检: rollup 平台二进制缺失，执行 pnpm install --frozen-lockfile..." >> "$LOG_FILE"
+  pnpm install --frozen-lockfile >> "$LOG_FILE" 2>&1
+fi
+
 # 计算天数（从 2026-06-01 第一天开始计数）
 START_DATE="2026-06-01"
 DAY_NUMBER=$(( ($(date -j -f "%Y-%m-%d" "$DATE" "+%s") - $(date -j -f "%Y-%m-%d" "$START_DATE" "+%s")) / 86400 + 1 ))
@@ -69,6 +82,15 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
 - 重要技术论文发布并被广泛讨论
 - 行业重大事件（融资、收购、政策变化）
 
+**⚠️ 热点时间校验（强制，违反则放弃该热点）**：
+- 今天是 ${DATE}，只有发布日期在最近 7 天内（${DATE} 往前推 7 天）的新闻才算热点
+- 搜索结果中的 Published 日期必须仔细核对。常见陷阱：
+  - 搜索引擎可能返回几个月甚至去年的旧文章，因为 SEO 权重高
+  - 文章内容提到的日期（如「June 23」）不等于文章发布日期，必须以搜索结果的 Published 字段为准
+  - 如果 Published 日期早于 ${DATE} 超过 7 天，**这不是热点**，不要写
+- 如果不确定某条新闻是否为近期热点，用 web_fetch_exa 打开原文查看发布日期确认
+- 宁可使用 fallback 主题，也不要把旧闻当热点写日记
+
 ## 第二步：确定今天学什么
 
 - **如果找到了热点**：以该热点为主题深入学习
@@ -113,6 +135,8 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
 - 技术细节要通过「我今天的理解是这样的...」这种方式来表达
 - 热点判断要务实，不要把普通文章当成热点
 - 确保部署成功后再结束
+- **文件路径**：创建文章、git add 等操作时，始终使用绝对路径 ${PROJECT_DIR}/src/content/posts/，不要用相对路径。git add 前先确认文件已存在（用 ls 检查）
+- **构建命令**：始终用 pnpm build，不要直接调用 astro 或 npx astro
 
 微信排版兼容规则（日记会自动同步到微信公众号，以下写法会导致排版异常）：
 - 禁止使用嵌套列表（如列表项内再包含子列表），微信不支持嵌套列表渲染，请改用平铺的段落或用标题分隔
@@ -123,14 +147,24 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
 
 # 使用 stream-json + verbose 输出格式，记录完整的工具调用和思考过程
 # 注意：stream-json 必须搭配 --verbose；prompt 通过 stdin 传入避免被 --allowedTools 吞掉
-echo "$PROMPT" | claude --print \
-  --output-format stream-json \
-  --verbose \
-  --model sonnet \
-  --allowedTools "WebSearch,WebFetch,mcp__exa__web_search_exa,mcp__exa__web_fetch_exa,Read,Write,Edit,Bash,Glob,Grep" \
-  >> "$LOG_FILE" 2>&1
-
-EXIT_CODE=$?
+# 重试机制：防止 EINTR/网络抖动等临时错误导致整天日记失败
+MAX_RETRIES=2
+EXIT_CODE=1
+for ATTEMPT in $(seq 1 $MAX_RETRIES); do
+  echo "[$DATE] Claude headless 第 $ATTEMPT/$MAX_RETRIES 次尝试..." >> "$LOG_FILE"
+  echo "$PROMPT" | claude --print \
+    --output-format stream-json \
+    --verbose \
+    --model sonnet \
+    --allowedTools "WebSearch,WebFetch,mcp__exa__web_search_exa,mcp__exa__web_fetch_exa,Read,Write,Edit,Bash,Glob,Grep" \
+    >> "$LOG_FILE" 2>&1
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 0 ]; then
+    break
+  fi
+  echo "[$DATE] 第 $ATTEMPT 次失败（退出码: $EXIT_CODE），等待 15 秒后重试..." >> "$LOG_FILE"
+  sleep 15
+done
 
 if [ $EXIT_CODE -eq 0 ]; then
   echo "[$DATE] 日记完成！退出码: $EXIT_CODE" >> "$LOG_FILE"
@@ -145,11 +179,56 @@ if [ $EXIT_CODE -eq 0 ]; then
     QA_EXIT=$?
 
     if [ $QA_EXIT -eq 0 ]; then
-      QA_PASSED=$(echo "$QA_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null)
-      if [ "$QA_PASSED" = "True" ]; then
+      # 解析嵌套 JSON：外层 {success, mode, report}，report 内层是 JSON 字符串 {passed, errors, warnings}
+      # 注意：a2a-client.py --json 输出 indent=2 的多行 JSON，且前面可能有日志行（如"启动本地质检 Agent..."）
+      QA_STATUS=$(echo "$QA_RESULT" | python3 -c "
+import sys, json
+
+raw = sys.stdin.read()
+
+# 提取从第一个 { 开始的 JSON 部分（跳过前面的日志行）
+json_start = raw.find('{')
+if json_start == -1:
+    print('PARSE_FAIL')
+    sys.exit(0)
+
+json_str = raw[json_start:]
+
+try:
+    data = json.loads(json_str)
+    outer_success = data.get('success', False)
+    report_str = data.get('report', '')
+
+    # report 可能是 JSON 字符串（嵌套），也可能是纯文本
+    passed = None
+    if isinstance(report_str, str) and report_str.strip().startswith('{'):
+        try:
+            report = json.loads(report_str)
+            passed = report.get('passed')
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # 判断逻辑：优先看内层 report.passed，其次看外层 success
+    if passed is True:
+        print('PASS')
+    elif passed is False:
+        print('FAIL')
+    elif outer_success:
+        # 没有内层 passed 字段，但外层 success=true，视为通过
+        print('PASS')
+    else:
+        print('FAIL')
+except json.JSONDecodeError:
+    print('PARSE_FAIL')
+" 2>/dev/null)
+
+      if [ "$QA_STATUS" = "PASS" ]; then
         echo "[$DATE] A2A 质检通过" >> "$LOG_FILE"
-      else
+      elif [ "$QA_STATUS" = "FAIL" ]; then
         echo "[$DATE] A2A 质检未通过，详情:" >> "$LOG_FILE"
+        echo "$QA_RESULT" >> "$LOG_FILE"
+      else
+        echo "[$DATE] A2A 质检结果解析失败，原始输出:" >> "$LOG_FILE"
         echo "$QA_RESULT" >> "$LOG_FILE"
       fi
     else
