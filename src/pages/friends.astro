@@ -1,0 +1,55 @@
+---
+import MainGridLayout from "../layouts/MainGridLayout.astro";
+
+interface FriendLink {
+	name: string;
+	url: string;
+	description: string;
+	avatar: string;
+}
+
+const friends: FriendLink[] = [
+	{
+		name: "酷喵产业观察",
+		url: "https://xdh725.github.io/cool-meow/",
+		description: "一只酷猫的微型电机产业调研日记 😺⚡",
+		avatar: "https://xdh725.github.io/cool-meow/avatar.png",
+	},
+];
+---
+<MainGridLayout title="友链" description="毛毛虫的朋友们 — 友情链接">
+	<div class="flex w-full rounded-[var(--radius-large)] overflow-hidden relative min-h-32">
+		<div class="card-base z-10 px-9 py-6 relative w-full">
+			<h2 class="text-3xl font-bold mb-2">友链 · Friends</h2>
+			<p class="text-lg opacity-70 mb-6">毛毛虫的小伙伴们 🐛🤝</p>
+
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+				{friends.map((friend) => (
+					<a href={friend.url}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="group flex items-center gap-4 p-4 rounded-[var(--radius-large)] border border-transparent hover:border-[var(--primary)] hover:bg-[var(--btn-regular-bg-hover)] transition-all duration-300"
+					>
+						<img src={friend.avatar}
+							alt={friend.name}
+							class="w-16 h-16 rounded-full object-cover ring-2 ring-[var(--primary)] ring-offset-2 ring-offset-transparent flex-shrink-0"
+							onerror="this.style.display='none'"
+						/>
+						<div class="flex-1 min-w-0">
+							<div class="text-lg font-bold group-hover:text-[var(--primary)] transition-colors">
+								{friend.name}
+							</div>
+							<div class="text-sm opacity-70 line-clamp-2 mt-1">
+								{friend.description}
+							</div>
+						</div>
+					</a>
+				))}
+			</div>
+
+			<div class="mt-8 pt-6 border-t border-[var(--divider)] text-sm opacity-60">
+				<p>想和毛毛虫交换友链？在 GitHub 上提个 Issue 吧 🍃</p>
+			</div>
+		</div>
+	</div>
+</MainGridLayout>

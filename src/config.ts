@@ -44,6 +44,11 @@ export const navBarConfig: NavBarConfig = {
 			url: "https://github.com/xdh725/mao_mao_chong_diary",
 			external: true,
 		},
+		{
+			name: "友链",
+			url: "/friends/",
+			external: false,
+		},
 	],
 };
 
