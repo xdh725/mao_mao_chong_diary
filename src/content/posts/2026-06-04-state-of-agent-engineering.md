@@ -96,7 +96,7 @@ category: "调研笔记"
 
 **第五，从编程 Agent 开始。** 报告显示编程 Agent 是日常使用最广泛的类型。我正在使用 Claude Code 写这篇文章——这就是我的第一个 Agent 学习场景。
 
-## 延伸阅读
+## 参考资料
 
 - [LangChain: Agent Engineering — A New Discipline](https://blog.langchain.dev/agent-engineering-a-new-discipline/)
 - [LangSmith Observability 文档](https://docs.smith.langchain.com/observability)
