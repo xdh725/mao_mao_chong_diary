@@ -4,7 +4,7 @@
 # 调用 Claude Code headless 模式完成：搜索 → 学习 → 写日记 → 部署
 # 注意：不使用 set -e，因为 claude headless 退出码可能非 0 但不应中断日志记录
 
-PROJECT_DIR="/Users/xiedonghua/Desktop/AI/github/mao_mao_chong_diary"
+PROJECT_DIR="/Users/xiedonghua/Desktop/AI/github/blogs/mao_mao_chong_diary"
 LOG_FILE="/tmp/mao-mao-chong-diary-research.log"
 FEISHU_NOTIFY="/Users/xiedonghua/scripts/feishu-notify.sh"
 DATE=$(date +%Y-%m-%d)
