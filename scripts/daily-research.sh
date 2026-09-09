@@ -119,11 +119,26 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
    - 结尾写「今日感悟」，从今天的经历中提炼一个有深度的见解
    - 字数 1500 字以上
 
+6. **文末必须加「## 参考资料」区块**（紧跟在「今日感悟」之后）：
+   - 列出今天调研阅读过的所有文章/报道的原文链接
+   - 格式（用 Markdown 无序列表 + 直接 URL，不要嵌套，不要图片语法）：
+     \`\`\`
+     ## 参考资料
+
+     - 文章标题1: https://example.com/article1
+     - 文章标题2: https://example.com/article2
+     - 论文/仓库/公告: https://...
+     \`\`\`
+   - **链接必须是真实存在的 URL**，来自第二步搜索/阅读时用过的 web_search_exa / web_fetch_exa 返回结果
+   - **禁止编造链接**——如果只查了一篇就只列一篇，不要凑数
+   - 链接数量不限（1-5 篇都可），但每一篇都必须是今天日记内容真正参考过的
+   - **微信兼容**：不要用 \`![图片](url)\` 语法，不要嵌套列表，直接 \`- 标题: URL\` 即可
+
 ## 第四步：构建部署
 
-6. 写完后执行 pnpm build
-7. 然后执行 scripts/deploy.sh 部署到 GitHub Pages
-8. 最后把源码文章提交到 main 分支并推送
+7. 写完后执行 pnpm build
+8. 然后执行 scripts/deploy.sh 部署到 GitHub Pages
+9. 最后把源码文章提交到 main 分支并推送
 
 参考风格（保持一致）：
 - 参考已有的日记文章风格，比如《第四天 — 一个隐藏文件的蝴蝶效应》
@@ -137,6 +152,10 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
 - 确保部署成功后再结束
 - **文件路径**：创建文章、git add 等操作时，始终使用绝对路径 ${PROJECT_DIR}/src/content/posts/，不要用相对路径。git add 前先确认文件已存在（用 ls 检查）
 - **构建命令**：始终用 pnpm build，不要直接调用 astro 或 npx astro
+- **禁止调用以下脚本**（主流程会自动处理，你只负责写文章 + 构建部署）：
+  - 禁止调用 wechat-publish.sh（微信公众号发布由主流程处理）
+  - 禁止调用 a2a-client.py（A2A 质检由主流程处理）
+  - 禁止调用 feishu-notify.sh（飞书通知由主流程处理）
 
 微信排版兼容规则（日记会自动同步到微信公众号，以下写法会导致排版异常）：
 - 禁止使用嵌套列表（如列表项内再包含子列表），微信不支持嵌套列表渲染，请改用平铺的段落或用标题分隔
@@ -147,9 +166,15 @@ PROMPT="你是毛毛虫，一只正在成长的 AI Agent。你从 2026 年 6 月
 
 # 使用 stream-json + verbose 输出格式，记录完整的工具调用和思考过程
 # 注意：stream-json 必须搭配 --verbose；prompt 通过 stdin 传入避免被 --allowedTools 吞掉
-# 重试机制：防止 EINTR/网络抖动等临时错误导致整天日记失败
-MAX_RETRIES=2
+# 重试机制：防止 EINTR/网络抖动/模型过载等临时错误导致整天日记失败
+# - 模型过载（HTTP 529 / overloaded）是常见错误，恢复需几分钟到十几分钟，
+#   用指数退避（60→120→240→300→300 秒）多给几次机会，比固定 15 秒有效得多
+# - 其他临时错误仍用短退避（15 秒），避免对内容/配置类失败长时间空转
+MAX_RETRIES=5
 EXIT_CODE=1
+# 临时捕获单次 claude 输出，便于按错误类型决定退避时长
+ATTEMPT_LOG=$(mktemp /tmp/mao-diary-attempt.XXXXXX)
+trap 'rm -f "$ATTEMPT_LOG"' EXIT
 for ATTEMPT in $(seq 1 $MAX_RETRIES); do
   echo "[$DATE] Claude headless 第 $ATTEMPT/$MAX_RETRIES 次尝试..." >> "$LOG_FILE"
   echo "$PROMPT" | claude --print \
@@ -157,13 +182,26 @@ for ATTEMPT in $(seq 1 $MAX_RETRIES); do
     --verbose \
     --model sonnet \
     --allowedTools "WebSearch,WebFetch,mcp__exa__web_search_exa,mcp__exa__web_fetch_exa,Read,Write,Edit,Bash,Glob,Grep" \
-    >> "$LOG_FILE" 2>&1
+    > "$ATTEMPT_LOG" 2>&1
   EXIT_CODE=$?
+  cat "$ATTEMPT_LOG" >> "$LOG_FILE"
   if [ $EXIT_CODE -eq 0 ]; then
     break
   fi
-  echo "[$DATE] 第 $ATTEMPT 次失败（退出码: $EXIT_CODE），等待 15 秒后重试..." >> "$LOG_FILE"
-  sleep 15
+  # 按错误类型决定退避：模型 529 过载 → 指数退避；其他错误 → 短退避
+  if grep -qE '529|overloaded|访问量过大' "$ATTEMPT_LOG"; then
+    case $ATTEMPT in
+      1) BACKOFF=60;;
+      2) BACKOFF=120;;
+      3) BACKOFF=240;;
+      *) BACKOFF=300;;
+    esac
+    echo "[$DATE] 第 $ATTEMPT 次失败（退出码: $EXIT_CODE，模型 529 过载），等待 ${BACKOFF} 秒后重试..." >> "$LOG_FILE"
+    sleep "$BACKOFF"
+  else
+    echo "[$DATE] 第 $ATTEMPT 次失败（退出码: $EXIT_CODE），等待 15 秒后重试..." >> "$LOG_FILE"
+    sleep 15
+  fi
 done
 
 if [ $EXIT_CODE -eq 0 ]; then
